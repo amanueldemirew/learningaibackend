@@ -1,0 +1,21 @@
+{
+  "cSpell.words": [
+    "dotenv",
+    "fastapi",
+    "fitz",
+    "genai",
+    "generativeai",
+    "hnsw",
+    "levelname",
+    "llms",
+    "passlib",
+    "pydantic",
+    "pymupdf",
+    "pypdf",
+    "pytesseract",
+    "redoc",
+    "sparql",
+    "sqlmodel",
+    "uvicorn"
+  ]
+}

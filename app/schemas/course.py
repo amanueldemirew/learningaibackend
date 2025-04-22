@@ -1,0 +1,328 @@
+from typing import List, Optional
+from pydantic import BaseModel, Field, validator
+from datetime import datetime
+from enum import Enum
+import json
+
+
+class CourseStatus(str, Enum):
+    """Enum for course status"""
+
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+
+
+class CourseBase(BaseModel):
+    """Base schema for course data"""
+
+    title: str = Field(..., description="Title of the course")
+    description: Optional[str] = Field(None, description="Description of the course")
+    thumbnail_url: Optional[str] = Field(
+        None, description="URL of the course thumbnail"
+    )
+    status: CourseStatus = Field(
+        default=CourseStatus.DRAFT, description="Status of the course"
+    )
+
+
+class CourseCreate(CourseBase):
+    """Schema for creating a new course"""
+
+    pass
+
+
+class CourseUpdate(CourseBase):
+    """Schema for updating a course"""
+
+    is_published: Optional[bool] = Field(
+        None, description="Whether the course is published"
+    )
+    status: Optional[CourseStatus] = Field(None, description="Status of the course")
+
+
+class CourseResponse(CourseBase):
+    """Schema for course response"""
+
+    id: int = Field(..., description="Unique identifier of the course")
+    user_id: int = Field(..., description="ID of the user who created the course")
+    username: str = Field(..., description="Username of the course creator")
+    file_id: Optional[int] = Field(
+        None, description="ID of the PDF file associated with the course"
+    )
+    is_published: bool = Field(..., description="Whether the course is published")
+    created_at: datetime = Field(
+        ..., description="Timestamp when the course was created"
+    )
+    updated_at: Optional[datetime] = Field(
+        None, description="Timestamp when the course was last updated"
+    )
+
+    class Config:
+        from_attributes = True
+
+
+class ModuleBase(BaseModel):
+    """Base schema for module data"""
+
+    title: str = Field(..., description="Title of the module")
+    description: Optional[str] = Field(None, description="Description of the module")
+    order: int = Field(..., description="Order of the module in the course")
+
+
+class ModuleCreate(ModuleBase):
+    """Schema for creating a new module"""
+
+    pass
+
+
+class ModuleUpdate(ModuleBase):
+    """Schema for updating a module"""
+
+    title: Optional[str] = Field(None, description="Title of the module")
+    description: Optional[str] = Field(None, description="Description of the module")
+    order: Optional[int] = Field(None, description="Order of the module in the course")
+
+
+class ModuleResponse(ModuleBase):
+    """Schema for module response"""
+
+    id: int = Field(..., description="Unique identifier of the module")
+    course_id: int = Field(..., description="ID of the course this module belongs to")
+    created_at: datetime = Field(
+        ..., description="Timestamp when the module was created"
+    )
+    updated_at: Optional[datetime] = Field(
+        None, description="Timestamp when the module was last updated"
+    )
+
+    class Config:
+        from_attributes = True
+
+
+class UnitBase(BaseModel):
+    """Base schema for unit data"""
+
+    title: str = Field(..., description="Title of the unit")
+    description: Optional[str] = Field(None, description="Description of the unit")
+    order: int = Field(..., description="Order of the unit in the module")
+
+
+class UnitCreate(UnitBase):
+    """Schema for creating a new unit"""
+
+    module_id: int = Field(..., description="ID of the module this unit belongs to")
+
+
+class UnitUpdate(UnitBase):
+    """Schema for updating a unit"""
+
+    title: Optional[str] = Field(None, description="Title of the unit")
+    description: Optional[str] = Field(None, description="Description of the unit")
+    order: Optional[int] = Field(None, description="Order of the unit in the module")
+
+
+class UnitResponse(UnitBase):
+    """Schema for unit response"""
+
+    id: int = Field(..., description="Unique identifier of the unit")
+    module_id: int = Field(..., description="ID of the module this unit belongs to")
+    created_at: datetime = Field(..., description="Timestamp when the unit was created")
+    updated_at: Optional[datetime] = Field(
+        None, description="Timestamp when the unit was last updated"
+    )
+
+    class Config:
+        from_attributes = True
+
+
+class ContentType(str, Enum):
+    """Enum for content types"""
+
+    TEXT = "text"
+    VIDEO = "video"
+    QUIZ = "quiz"
+    SUMMARY = "summary"
+    EXERCISE = "exercise"
+    EXAMPLE = "example"
+
+
+class ContentBase(BaseModel):
+    """Base schema for content data"""
+
+    title: str = Field(..., description="Title of the content")
+    content_type: ContentType = Field(
+        ..., description="Type of content (text, video, quiz, etc.)"
+    )
+    content: str = Field(..., description="The actual content")
+    order: int = Field(..., description="Order of the content in the unit")
+    is_ai_generated: bool = Field(
+        ..., description="Whether the content was generated by AI"
+    )
+    ai_prompt: Optional[str] = Field(
+        None, description="The prompt used to generate content"
+    )
+    page_reference: Optional[str] = Field(
+        None, description="Reference to specific pages in the PDF"
+    )
+    content_metadata: Optional[dict] = Field(
+        default={}, description="Additional metadata for the content"
+    )
+
+    @validator("content_metadata", pre=True)
+    def parse_metadata(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return {}
+        return v or {}
+
+
+class ContentCreate(ContentBase):
+    """Schema for creating new content"""
+
+    unit_id: int = Field(..., description="ID of the unit this content belongs to")
+
+
+class ContentUpdate(ContentBase):
+    """Schema for updating content"""
+
+    title: Optional[str] = Field(None, description="Title of the content")
+    content_type: Optional[ContentType] = Field(
+        None, description="Type of content (text, video, quiz, etc.)"
+    )
+    content: Optional[str] = Field(None, description="The actual content")
+    order: Optional[int] = Field(None, description="Order of the content in the unit")
+    is_ai_generated: Optional[bool] = Field(
+        None, description="Whether the content was generated by AI"
+    )
+    ai_prompt: Optional[str] = Field(
+        None, description="The prompt used to generate content"
+    )
+    page_reference: Optional[str] = Field(
+        None, description="Reference to specific pages in the PDF"
+    )
+    content_metadata: Optional[dict] = Field(
+        None, description="Additional metadata for the content"
+    )
+
+
+class ContentResponse(ContentBase):
+    """Schema for content response"""
+
+    id: int = Field(..., description="Unique identifier of the content")
+    unit_id: int = Field(..., description="ID of the unit this content belongs to")
+    created_at: datetime = Field(
+        ..., description="Timestamp when the content was created"
+    )
+    updated_at: Optional[datetime] = Field(
+        None, description="Timestamp when the content was last updated"
+    )
+
+    class Config:
+        from_attributes = True
+
+
+class ContentGenerationOptions(BaseModel):
+    """Schema for content generation options"""
+
+    content_type: ContentType = Field(
+        ..., description="Type of content to generate (text, quiz, summary, etc.)"
+    )
+    custom_prompt: Optional[str] = Field(
+        None, description="Custom prompt to use for content generation"
+    )
+    include_examples: bool = Field(
+        True, description="Whether to include examples in the generated content"
+    )
+    include_exercises: bool = Field(
+        True, description="Whether to include exercises in the generated content"
+    )
+    difficulty_level: Optional[str] = Field(
+        None,
+        description="Difficulty level of the generated content (beginner, intermediate, advanced)",
+    )
+    tone: Optional[str] = Field(
+        None,
+        description="Tone of the generated content (formal, casual, technical, etc.)",
+    )
+    target_audience: Optional[str] = Field(
+        None,
+        description="Target audience for the generated content (students, professionals, etc.)",
+    )
+
+
+class TOCUnit(BaseModel):
+    """Schema for a unit in the table of contents"""
+
+    id: int = Field(..., description="Unique identifier of the unit")
+    title: str = Field(..., description="Title of the unit")
+    description: Optional[str] = Field(None, description="Description of the unit")
+    order: int = Field(..., description="Order of the unit in the module")
+    content_generated: bool = Field(
+        ..., description="Whether content has been generated for this unit"
+    )
+    content_count: Optional[int] = Field(
+        0, description="Number of content items in this unit"
+    )
+
+
+class TOCModule(BaseModel):
+    """Schema for a module in the table of contents"""
+
+    id: int = Field(..., description="Unique identifier of the module")
+    title: str = Field(..., description="Title of the module")
+    description: Optional[str] = Field(None, description="Description of the module")
+    order: int = Field(..., description="Order of the module in the course")
+    units: List[TOCUnit] = Field(..., description="Units in this module")
+    content_generated: bool = Field(
+        ..., description="Whether content has been generated for this module"
+    )
+    content_count: Optional[int] = Field(
+        0, description="Number of content items in this module"
+    )
+
+
+class TOCMetadata(BaseModel):
+    """Schema for metadata in the table of contents"""
+
+    generated_at: str = Field(..., description="Timestamp when the TOC was generated")
+    source_file: str = Field(..., description="Name of the source PDF file")
+    total_pages: Optional[int] = Field(
+        None, description="Total number of pages in the PDF"
+    )
+    total_modules: Optional[int] = Field(None, description="Total number of modules")
+    total_units: Optional[int] = Field(None, description="Total number of units")
+    total_content: Optional[int] = Field(
+        None, description="Total number of content items"
+    )
+
+
+class TOCResponse(BaseModel):
+    """Schema for table of contents response"""
+
+    course_id: int = Field(..., description="ID of the course")
+    course_title: str = Field(..., description="Title of the course")
+    modules: List[TOCModule] = Field(..., description="Modules in the course")
+    metadata: TOCMetadata = Field(..., description="Metadata about the TOC")
+    is_complete: bool = Field(
+        ..., description="Whether all content has been generated for this course"
+    )
+
+
+class CourseStats(BaseModel):
+    """Schema for course statistics"""
+
+    course_id: int = Field(..., description="ID of the course")
+    total_modules: int = Field(..., description="Total number of modules")
+    total_units: int = Field(..., description="Total number of units")
+    total_content: int = Field(..., description="Total number of content items")
+    ai_generated_content: int = Field(
+        ..., description="Number of AI-generated content items"
+    )
+    manual_content: int = Field(
+        ..., description="Number of manually created content items"
+    )
+    content_by_type: dict = Field(..., description="Content count by type")
+    last_updated: datetime = Field(..., description="Timestamp of last update")
