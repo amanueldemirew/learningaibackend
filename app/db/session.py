@@ -5,10 +5,14 @@ from app.models.user import User
 import time
 import logging
 from sqlalchemy.exc import OperationalError
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Flag to track if we're in a development environment
+IS_DEVELOPMENT = os.getenv("ENVIRONMENT", "production").lower() == "development"
 
 
 # Create engine with connection retry logic
@@ -38,7 +42,67 @@ def create_db_engine(max_retries=5, retry_delay=5):
                 logger.error(
                     f"Failed to connect to database after {max_retries} attempts: {str(e)}"
                 )
-                raise
+                if IS_DEVELOPMENT:
+                    # In development, use SQLite as fallback
+                    logger.warning(
+                        "Using SQLite as fallback database in development mode"
+                    )
+                    return create_sqlite_engine()
+                else:
+                    # In production, we'll use a delayed initialization approach
+                    logger.warning(
+                        "Using delayed database initialization in production mode"
+                    )
+                    return create_delayed_engine()
+        except Exception as e:
+            logger.error(f"Unexpected error connecting to database: {str(e)}")
+            if IS_DEVELOPMENT:
+                return create_sqlite_engine()
+            else:
+                return create_delayed_engine()
+
+
+def create_sqlite_engine():
+    """Create a SQLite engine for development fallback"""
+    sqlite_url = "sqlite:///./sql_app.db"
+    logger.info(f"Creating SQLite engine with URL: {sqlite_url}")
+    return create_engine(sqlite_url, connect_args={"check_same_thread": False})
+
+
+def create_delayed_engine():
+    """Create a dummy engine that will be replaced later when connection is possible"""
+    logger.info("Creating delayed initialization engine")
+    # Create a dummy SQLite engine that will be replaced later
+    dummy_engine = create_sqlite_engine()
+
+    # Start a background thread to try connecting to the real database
+    import threading
+
+    def try_connect_later():
+        time.sleep(10)  # Wait 10 seconds before trying
+        try:
+            real_engine = create_engine(
+                settings.SUPABASE_CONNECTION_STRING,
+                echo=True,
+                pool_pre_ping=True,
+                pool_recycle=300,
+            )
+            # Test the connection
+            with real_engine.connect() as conn:
+                conn.execute("SELECT 1")
+            logger.info(
+                "Successfully connected to the real database in background thread"
+            )
+            # Replace the global engine with the real one
+            global engine
+            engine = real_engine
+        except Exception as e:
+            logger.error(f"Background connection attempt failed: {str(e)}")
+
+    # Start the background thread
+    threading.Thread(target=try_connect_later, daemon=True).start()
+
+    return dummy_engine
 
 
 # Create the engine
@@ -51,7 +115,13 @@ def init_db():
         create_default_user()
     except Exception as e:
         logger.error(f"Error initializing database: {str(e)}")
-        raise
+        if not IS_DEVELOPMENT:
+            # In production, we'll continue even if initialization fails
+            logger.warning(
+                "Continuing application startup despite database initialization failure"
+            )
+        else:
+            raise
 
 
 def create_default_user():
@@ -73,7 +143,13 @@ def create_default_user():
                 logger.info("Default user created: user@example.com / password123")
     except Exception as e:
         logger.error(f"Error creating default user: {str(e)}")
-        raise
+        if not IS_DEVELOPMENT:
+            # In production, we'll continue even if user creation fails
+            logger.warning(
+                "Continuing application startup despite user creation failure"
+            )
+        else:
+            raise
 
 
 def get_session():

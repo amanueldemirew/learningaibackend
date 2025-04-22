@@ -60,7 +60,7 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -136,7 +136,22 @@ async def startup_event():
         reload_enabled=settings.RELOAD,
         log_level=settings.LOG_LEVEL,
     )
-    init_db()
+
+    # Try to initialize the database, but don't fail if it doesn't work
+    try:
+        init_db()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {str(e)}")
+        logger.warning("Application will continue without database initialization")
+        # In production, we'll continue even if database initialization fails
+        if os.getenv("ENVIRONMENT", "production").lower() != "development":
+            logger.warning(
+                "Continuing application startup despite database initialization failure"
+            )
+        else:
+            # In development, we might want to fail fast
+            raise
 
 
 @app.on_event("shutdown")
@@ -148,3 +163,26 @@ async def shutdown_event():
 @app.get("/")
 async def root():
     return {"message": "Welcome to FastAPI Backend"}
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint to monitor application and database status"""
+    from sqlalchemy import text
+    from app.db.session import engine
+
+    db_status = "unknown"
+    try:
+        # Try to connect to the database
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            db_status = "connected"
+    except Exception as e:
+        db_status = f"disconnected: {str(e)}"
+
+    return {
+        "status": "ok",
+        "database": db_status,
+        "environment": os.getenv("ENVIRONMENT", "production"),
+        "version": "1.0.0",
+    }
