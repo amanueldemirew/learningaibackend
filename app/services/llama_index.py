@@ -7,6 +7,7 @@ from io import BytesIO
 import logging
 import urllib.parse
 import time
+from typing import List, Optional, Dict, Any
 
 from llama_index.core import (
     VectorStoreIndex,
@@ -26,6 +27,7 @@ from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.llms.groq import Groq
 from app.core.supabase import supabase, supabase_admin, BUCKET_NAME
 from app.core.config import settings
+from app.services.vector_store import VectorStoreService
 
 # Set up logging with more detailed format
 logging.basicConfig(
@@ -45,8 +47,8 @@ EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "models/embedding-001")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-70b-8192")
 
-# Get the connection string from settings
-SUPABASE_CONNECTION_STRING = settings.SUPABASE_CONNECTION_STRING
+# Get the Supabase connection string from settings
+SUPABASE_CONNECTION_STRING = settings.SUPABASE_URL
 
 logger.info("Initializing LlamaIndex service with configuration:")
 logger.info(f"CHUNK_SIZE: {CHUNK_SIZE}")
@@ -75,222 +77,172 @@ except Exception as e:
     raise
 
 
-# Configure global settings once
 def configure_llama_settings():
     """Configure LlamaIndex settings"""
-    try:
-        logger.info("Configuring LlamaIndex settings...")
-        Settings.chunk_size = CHUNK_SIZE
-        Settings.chunk_overlap = CHUNK_OVERLAP
-        Settings.llm = llm
-        Settings.embed_model = GoogleGenAIEmbedding(
-            model_name=EMBEDDING_MODEL, api_key=GEMINI_API_KEY
-        )
-        logger.info("LlamaIndex settings configured successfully")
-    except Exception as e:
-        logger.error(f"Failed to configure LlamaIndex settings: {str(e)}")
-        raise
+    # Reset any existing settings
+    Settings.chunk_size = CHUNK_SIZE
+    Settings.chunk_overlap = CHUNK_OVERLAP
+
+    # Configure LLM
+    if GEMINI_API_KEY:
+        Settings.llm = GoogleGenAI(model=GEMINI_MODEL, api_key=GEMINI_API_KEY)
+    elif GROQ_API_KEY:
+        Settings.llm = Groq(model=GROQ_MODEL, api_key=GROQ_API_KEY)
+    else:
+        logger.warning("No LLM API key found. Using default LLM.")
+
+    # Configure embedding model
+    if GEMINI_API_KEY:
+        Settings.embed_model = GoogleGenAIEmbedding(model_name=EMBEDDING_MODEL)
+    else:
+        logger.warning("No embedding API key found. Using default embedding model.")
 
 
 class LlamaIndexService:
-    def __init__(self, output_dir="output", course_id=None):
-        """Initialize vector store and optional settings
+    """Service for managing LlamaIndex operations"""
+
+    def __init__(self, collection_name: str = "default"):
+        """
+        Initialize the LlamaIndex service
 
         Args:
-            output_dir: Base directory for storing vector indices
-            course_id: Optional course ID to create a course-specific vector store
+            collection_name: Name of the collection to use
         """
-        logger.info(f"Initializing LlamaIndexService with course_id: {course_id}")
-        configure_llama_settings()
-        self.output_dir = output_dir
-        self.course_id = course_id
+        self.collection_name = collection_name
+        self.vector_store = VectorStoreService(collection_name)
 
-        # Initialize the vector store
-        self._init_vector_store()
-        self.vector_index = None
+    def process_file(self, file_path: str) -> int:
+        """
+        Process a file and add it to the vector store
 
-    def _init_vector_store(self):
-        """Set up Supabase vector store with fallback to local Chroma"""
-        # Use course-specific collection name if course_id is provided
-        collection_name = (
-            f"course_{self.course_id}" if self.course_id else "global_collection"
-        )
+        Args:
+            file_path: Path to the file to process
 
-        logger.info(f"Initializing vector store with collection: {collection_name}")
-
-        max_retries = 3
-        retry_delay = 5  # seconds
-
-        # Try Supabase first
-        for attempt in range(max_retries):
-            try:
-                # Create the vector store
-                logger.info(
-                    f"Creating Supabase vector store (attempt {attempt + 1}/{max_retries})..."
-                )
-                self.vector_store = SupabaseVectorStore(
-                    postgres_connection_string=SUPABASE_CONNECTION_STRING,
-                    collection_name=collection_name,
-                )
-                logger.info("Supabase vector store created successfully")
-
-                # Create storage context
-                logger.info("Creating storage context...")
-                self.storage_context = StorageContext.from_defaults(
-                    vector_store=self.vector_store
-                )
-                logger.info("Storage context created successfully")
-                return  # Success, exit the retry loop
-            except Exception as e:
-                logger.error(
-                    f"Error initializing Supabase vector store (attempt {attempt + 1}/{max_retries}): {str(e)}"
-                )
-                if attempt < max_retries - 1:
-                    logger.info(f"Retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
-                else:
-                    logger.error(
-                        f"Connection string used: {SUPABASE_CONNECTION_STRING[:20]}..."
-                    )
-                    logger.warning("Falling back to local Chroma vector store")
-                    break  # Exit the retry loop and try fallback
-
-        # Fallback to local Chroma vector store
+        Returns:
+            Number of documents added
+        """
         try:
-            logger.info("Initializing local Chroma vector store...")
+            logger.info(f"Processing file: {file_path}")
 
-            # Create output directory if it doesn't exist
-            os.makedirs(self.output_dir, exist_ok=True)
+            # Read the file
+            documents = SimpleDirectoryReader(input_files=[file_path]).load_data()
 
-            # Initialize Chroma client
-            chroma_client = chromadb.PersistentClient(
-                path=os.path.join(self.output_dir, "chroma_db")
-            )
+            # Add documents to vector store
+            num_docs = self.vector_store.add_documents(documents)
 
-            # Create or get collection
-            chroma_collection = chroma_client.get_or_create_collection(
-                name=collection_name, metadata={"hnsw:space": "cosine"}
-            )
-
-            # Create vector store
-            self.vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-
-            # Create storage context
-            self.storage_context = StorageContext.from_defaults(
-                vector_store=self.vector_store
-            )
-
-            logger.info("Local Chroma vector store initialized successfully")
+            logger.info(f"Successfully processed file: {file_path}")
+            return num_docs
         except Exception as e:
-            logger.error(f"Error initializing local Chroma vector store: {str(e)}")
+            logger.error(f"Error processing file: {str(e)}")
             raise
 
-    async def _download_from_supabase(self, file_url):
-        """Download a file from Supabase and return its local path"""
+    def process_directory(self, directory_path: str) -> int:
+        """
+        Process all files in a directory and add them to the vector store
+
+        Args:
+            directory_path: Path to the directory to process
+
+        Returns:
+            Number of documents added
+        """
         try:
-            # Extract the file path from the URL
-            file_path = file_url.split(f"{BUCKET_NAME}/")[1]
+            logger.info(f"Processing directory: {directory_path}")
 
-            # Download the file from Supabase
-            response = supabase.storage.from_(BUCKET_NAME).download(file_path)
+            # Read all files in the directory
+            documents = SimpleDirectoryReader(directory_path).load_data()
 
-            # Create a temporary file
-            temp_file_path = None
-            try:
-                with tempfile.NamedTemporaryFile(
-                    delete=False, suffix=os.path.splitext(file_path)[1]
-                ) as temp_file:
-                    temp_file.write(response)
-                    temp_file_path = temp_file.name
-                    return temp_file_path
-            except Exception as e:
-                if temp_file_path and os.path.exists(temp_file_path):
-                    try:
-                        os.unlink(temp_file_path)
-                    except PermissionError:
-                        logger.error(
-                            f"Could not delete temporary file: {temp_file_path}"
-                        )
-                raise e
+            # Add documents to vector store
+            num_docs = self.vector_store.add_documents(documents)
+
+            logger.info(f"Successfully processed directory: {directory_path}")
+            return num_docs
         except Exception as e:
-            logger.error(f"Error downloading file from Supabase: {str(e)}")
+            logger.error(f"Error processing directory: {str(e)}")
             raise
 
-    async def process_pdf(self, pdf_path, start_page=None, end_page=None):
-        """Load a PDF and build or update the vector index"""
-        # Check if pdf_path is a URL (from Supabase)
-        if pdf_path.startswith("http"):
-            # Download the file from Supabase
-            local_pdf_path = await self._download_from_supabase(pdf_path)
-        else:
-            local_pdf_path = pdf_path
+    def query(self, query: str, top_k: int = 5) -> str:
+        """
+        Query the vector store
 
+        Args:
+            query: Query string
+            top_k: Number of results to return
+
+        Returns:
+            Response from the query
+        """
         try:
-            reader = PyMuPDFReader(start_page=start_page, end_page=end_page)
-            docs = reader.load_data(file=local_pdf_path)
-            if not docs:
-                raise ValueError("No pages loaded from PDF")
+            logger.info(f"Querying with: {query}")
 
-            # Try to load existing index
-            try:
-                self.vector_index = VectorStoreIndex.from_vector_store(
-                    vector_store=self.vector_store
-                )
-                logger.info("Loaded existing index.")
-                self.vector_index.insert_nodes([Document(text=d.text) for d in docs])
-                logger.info(f"Inserted {len(docs)} new pages into existing index.")
-            except Exception as e:
-                logger.warning(f"No existing index found or error loading: {str(e)}")
-                logger.info("Building new index.")
-                self.vector_index = VectorStoreIndex.from_documents(
-                    docs, storage_context=self.storage_context
-                )
-                logger.info("Built new index.")
+            # Query the vector store
+            response = self.vector_store.query(query, top_k)
 
-            # If we downloaded the file, clean up the temporary file
-            if pdf_path.startswith("http"):
-                os.unlink(local_pdf_path)
-
-            return {"status": "ok", "pages_indexed": len(docs)}
+            logger.info("Successfully queried vector store")
+            return response
         except Exception as e:
-            # Clean up the temporary file in case of error
-            if pdf_path.startswith("http") and os.path.exists(local_pdf_path):
-                os.unlink(local_pdf_path)
-            raise e
+            logger.error(f"Error querying vector store: {str(e)}")
+            raise
 
-    async def query_index(self, query: str) -> str:
-        """Query the stored vector index"""
-        if self.vector_index is None:
-            try:
-                self.vector_index = VectorStoreIndex.from_vector_store(
-                    vector_store=self.vector_store
-                )
-                logger.info("Loaded existing index for querying.")
-            except Exception as e:
-                logger.error(f"Error loading index: {str(e)}")
-                raise RuntimeError(
-                    "Vector index not initialized and couldn't be loaded. Process a PDF first."
-                )
+    def get_document(self, doc_id: str) -> Optional[Document]:
+        """
+        Get a document by ID
 
-        retriever = self.vector_index.as_retriever(similarity_top_k=3)
-        synth = get_response_synthesizer(llm=Settings.llm)
-        engine = RetrieverQueryEngine(retriever=retriever, response_synthesizer=synth)
-        response = engine.query(query)
-        return response.response
+        Args:
+            doc_id: Document ID
 
-    async def generate_content(self, text: str, prompt: str) -> str:
-        """Index raw text (as a Document) and query with a prompt"""
-        doc = Document(text=text)
-        temp_idx = VectorStoreIndex.from_documents([doc])
+        Returns:
+            Document if found, None otherwise
+        """
+        try:
+            logger.info(f"Getting document: {doc_id}")
 
-        retriever = temp_idx.as_retriever(similarity_top_k=3)
-        synth = get_response_synthesizer(llm=Settings.llm)
-        engine = RetrieverQueryEngine(retriever=retriever, response_synthesizer=synth)
-        response = engine.query(prompt)
-        return response.response
+            # Get document from vector store
+            doc = self.vector_store.get_document_by_id(doc_id)
 
-    async def generate_summary(self, text: str) -> str:
-        """Generate concise summary of text"""
-        prompt = "Create a concise summary of the following content. Focus on the main points and key concepts. Keep the summary clear and informative."
-        return await self.generate_content(text, prompt)
+            logger.info(f"Successfully retrieved document: {doc_id}")
+            return doc
+        except Exception as e:
+            logger.error(f"Error getting document: {str(e)}")
+            raise
+
+    def delete_document(self, doc_id: str) -> bool:
+        """
+        Delete a document by ID
+
+        Args:
+            doc_id: Document ID
+
+        Returns:
+            True if document was deleted, False otherwise
+        """
+        try:
+            logger.info(f"Deleting document: {doc_id}")
+
+            # Delete document from vector store
+            result = self.vector_store.delete_document(doc_id)
+
+            logger.info(f"Successfully deleted document: {doc_id}")
+            return result
+        except Exception as e:
+            logger.error(f"Error deleting document: {str(e)}")
+            raise
+
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about the collection
+
+        Returns:
+            Dictionary with collection statistics
+        """
+        try:
+            logger.info("Getting collection statistics")
+
+            # Get collection stats
+            stats = self.vector_store.get_collection_stats()
+
+            logger.info("Successfully retrieved collection statistics")
+            return stats
+        except Exception as e:
+            logger.error(f"Error getting collection statistics: {str(e)}")
+            raise
