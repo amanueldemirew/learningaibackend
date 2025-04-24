@@ -48,15 +48,6 @@ def create_db_engine(max_retries=5, retry_delay=5, use_vector_store=False):
         try:
             logger.info(f"Database connection attempt {attempt + 1}/{max_retries}")
 
-            # Add SSL mode for Supabase connections
-            if use_vector_store and "sslmode=require" not in connection_url:
-                connection_url += (
-                    "?sslmode=require"
-                    if "?" not in connection_url
-                    else "&sslmode=require"
-                )
-                logger.info("Added SSL mode to Supabase connection URL")
-
             engine = create_engine(
                 connection_url,
                 echo=True,
@@ -109,9 +100,7 @@ def derive_direct_url(pooled_url):
 
     # For Supabase, the direct connection typically uses port 5432 instead of 6543
     # and doesn't have the pgbouncer parameter
-    direct_url = (
-        f"postgresql://{username}:{password}@{host}:5432/{database}?sslmode=require"
-    )
+    direct_url = f"postgresql://{username}:{password}@{host}:5432/{database}"
 
     # Log the derived URL (with password masked)
     masked_direct_url = mask_connection_string(direct_url)
