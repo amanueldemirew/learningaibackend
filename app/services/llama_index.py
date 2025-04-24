@@ -6,6 +6,7 @@ import requests
 from io import BytesIO
 import logging
 import urllib.parse
+import time
 
 from llama_index.core import (
     VectorStoreIndex,
@@ -17,6 +18,8 @@ from llama_index.llms.google_genai import GoogleGenAI
 from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
 from llama_index.readers.file import PyMuPDFReader
 from llama_index.vector_stores.supabase import SupabaseVectorStore
+from llama_index.vector_stores.chroma import ChromaVectorStore
+import chromadb
 from llama_index.core.schema import Document
 from llama_index.core import Settings
 from llama_index.core.query_engine import RetrieverQueryEngine
@@ -24,7 +27,10 @@ from llama_index.llms.groq import Groq
 from app.core.supabase import supabase, supabase_admin, BUCKET_NAME
 from app.core.config import settings
 
-# Set up logging
+# Set up logging with more detailed format
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 # Load environment variables
@@ -42,24 +48,48 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-70b-8192")
 # Get the connection string from settings
 SUPABASE_CONNECTION_STRING = settings.SUPABASE_CONNECTION_STRING
 
+logger.info("Initializing LlamaIndex service with configuration:")
+logger.info(f"CHUNK_SIZE: {CHUNK_SIZE}")
+logger.info(f"CHUNK_OVERLAP: {CHUNK_OVERLAP}")
+logger.info(f"GEMINI_MODEL: {GEMINI_MODEL}")
+logger.info(f"EMBEDDING_MODEL: {EMBEDDING_MODEL}")
+logger.info(f"GROQ_MODEL: {GROQ_MODEL}")
+logger.info(
+    f"Supabase connection string configured: {'Yes' if SUPABASE_CONNECTION_STRING else 'No'}"
+)
 
-
-logger.info("Initializing LlamaIndex service with Supabase connection")
-
-llm = Groq(model="llama3-70b-8192", api_key=GROQ_API_KEY)
+if not GROQ_API_KEY:
+    logger.error("GROQ_API_KEY is not configured in environment variables")
+    raise ValueError("GROQ_API_KEY is required in your environment")
 
 if not GEMINI_API_KEY:
+    logger.error("GEMINI_API_KEY is not configured in environment variables")
     raise ValueError("GEMINI_API_KEY is required in your environment")
+
+try:
+    logger.info("Initializing Groq LLM...")
+    llm = Groq(model=GROQ_MODEL, api_key=GROQ_API_KEY)
+    logger.info("Groq LLM initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize Groq LLM: {str(e)}")
+    raise
 
 
 # Configure global settings once
 def configure_llama_settings():
-    Settings.chunk_size = CHUNK_SIZE
-    Settings.chunk_overlap = CHUNK_OVERLAP
-    Settings.llm = llm
-    Settings.embed_model = GoogleGenAIEmbedding(
-        model_name=EMBEDDING_MODEL, api_key=GEMINI_API_KEY
-    )
+    """Configure LlamaIndex settings"""
+    try:
+        logger.info("Configuring LlamaIndex settings...")
+        Settings.chunk_size = CHUNK_SIZE
+        Settings.chunk_overlap = CHUNK_OVERLAP
+        Settings.llm = llm
+        Settings.embed_model = GoogleGenAIEmbedding(
+            model_name=EMBEDDING_MODEL, api_key=GEMINI_API_KEY
+        )
+        logger.info("LlamaIndex settings configured successfully")
+    except Exception as e:
+        logger.error(f"Failed to configure LlamaIndex settings: {str(e)}")
+        raise
 
 
 class LlamaIndexService:
@@ -70,6 +100,7 @@ class LlamaIndexService:
             output_dir: Base directory for storing vector indices
             course_id: Optional course ID to create a course-specific vector store
         """
+        logger.info(f"Initializing LlamaIndexService with course_id: {course_id}")
         configure_llama_settings()
         self.output_dir = output_dir
         self.course_id = course_id
@@ -79,30 +110,80 @@ class LlamaIndexService:
         self.vector_index = None
 
     def _init_vector_store(self):
-        """Set up Supabase vector store"""
+        """Set up Supabase vector store with fallback to local Chroma"""
         # Use course-specific collection name if course_id is provided
         collection_name = (
             f"course_{self.course_id}" if self.course_id else "global_collection"
         )
 
-        logger.info(
-            f"Initializing Supabase vector store with collection: {collection_name}"
-        )
+        logger.info(f"Initializing vector store with collection: {collection_name}")
 
+        max_retries = 3
+        retry_delay = 5  # seconds
+
+        # Try Supabase first
+        for attempt in range(max_retries):
+            try:
+                # Create the vector store
+                logger.info(
+                    f"Creating Supabase vector store (attempt {attempt + 1}/{max_retries})..."
+                )
+                self.vector_store = SupabaseVectorStore(
+                    postgres_connection_string=SUPABASE_CONNECTION_STRING,
+                    collection_name=collection_name,
+                )
+                logger.info("Supabase vector store created successfully")
+
+                # Create storage context
+                logger.info("Creating storage context...")
+                self.storage_context = StorageContext.from_defaults(
+                    vector_store=self.vector_store
+                )
+                logger.info("Storage context created successfully")
+                return  # Success, exit the retry loop
+            except Exception as e:
+                logger.error(
+                    f"Error initializing Supabase vector store (attempt {attempt + 1}/{max_retries}): {str(e)}"
+                )
+                if attempt < max_retries - 1:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.error(
+                        f"Connection string used: {SUPABASE_CONNECTION_STRING[:20]}..."
+                    )
+                    logger.warning("Falling back to local Chroma vector store")
+                    break  # Exit the retry loop and try fallback
+
+        # Fallback to local Chroma vector store
         try:
-            # Create the vector store
-            self.vector_store = SupabaseVectorStore(
-                postgres_connection_string=SUPABASE_CONNECTION_STRING,
-                collection_name=collection_name,
+            logger.info("Initializing local Chroma vector store...")
+
+            # Create output directory if it doesn't exist
+            os.makedirs(self.output_dir, exist_ok=True)
+
+            # Initialize Chroma client
+            chroma_client = chromadb.PersistentClient(
+                path=os.path.join(self.output_dir, "chroma_db")
             )
+
+            # Create or get collection
+            chroma_collection = chroma_client.get_or_create_collection(
+                name=collection_name, metadata={"hnsw:space": "cosine"}
+            )
+
+            # Create vector store
+            self.vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
 
             # Create storage context
             self.storage_context = StorageContext.from_defaults(
                 vector_store=self.vector_store
             )
-            logger.info("Successfully initialized Supabase vector store")
+
+            logger.info("Local Chroma vector store initialized successfully")
         except Exception as e:
-            logger.error(f"Error initializing Supabase vector store: {str(e)}")
+            logger.error(f"Error initializing local Chroma vector store: {str(e)}")
             raise
 
     async def _download_from_supabase(self, file_url):

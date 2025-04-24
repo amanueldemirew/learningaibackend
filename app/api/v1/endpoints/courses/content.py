@@ -113,115 +113,161 @@ async def generate_content(
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
 ):
-    # Get unit first to check module_id
-    unit = db.get(Unit, unit_id)
-    if not unit:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Unit not found"
+    logger.info(f"Starting content generation for unit_id: {unit_id}")
+    try:
+        # Get unit first to check module_id
+        logger.info("Fetching unit from database...")
+        unit = db.get(Unit, unit_id)
+        if not unit:
+            logger.error(f"Unit not found with ID: {unit_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Unit not found"
+            )
+        logger.info(f"Found unit: {unit.title}")
+
+        # Verify module exists and belongs to the course
+        logger.info("Fetching module from database...")
+        module = db.get(Module, unit.module_id)
+        if not module:
+            logger.error(f"Module not found with ID: {unit.module_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Module not found"
+            )
+        logger.info(f"Found module: {module.title}")
+
+        # Verify course exists and user has access
+        logger.info("Fetching course from database...")
+        course = db.get(Course, module.course_id)
+        if not course:
+            logger.error(f"Course not found with ID: {module.course_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Course not found"
+            )
+        logger.info(f"Found course: {course.title}")
+
+        # Only course owner can create content
+        if course.user_id != current_user.id:
+            logger.error(
+                f"User {current_user.id} does not have permission to generate content for course {course.id}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions"
+            )
+
+        # Extract text from PDF if available
+        source_text = ""
+        page_reference = ""
+
+        if course.file_id:
+            logger.info("Course has associated file, attempting to extract text...")
+            file = db.get(File, course.file_id)
+            if file and file.file_path:
+                temp_file_path = None
+                try:
+                    # Download file from Supabase to a temporary location
+                    logger.info(f"Downloading file from Supabase: {file.file_path}")
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=".pdf"
+                    ) as temp_file:
+                        temp_file_path = temp_file.name
+                        file_content = await download_file_from_supabase(file.file_path)
+                        temp_file.write(file_content)
+
+                    # Extract text from PDF using temporary file
+                    logger.info("Extracting text from PDF...")
+                    pdf_toc = PDFTableOfContents(temp_file_path)
+                    source_text = pdf_toc.extract_text_from_pages(1, 5)
+                    logger.info(f"Extracted {len(source_text)} characters from PDF")
+                except Exception as e:
+                    logger.error(f"Error processing PDF: {str(e)}")
+                finally:
+                    # Clean up temporary file
+                    if temp_file_path and os.path.exists(temp_file_path):
+                        try:
+                            os.unlink(temp_file_path)
+                            logger.info("Temporary file cleaned up")
+                        except PermissionError:
+                            logger.warning(
+                                f"Could not delete temporary file: {temp_file_path}"
+                            )
+
+        # If no source text is available, use a default prompt
+        if not source_text:
+            logger.info("No source text available, using default prompt")
+            source_text = f"Create educational content for the unit: {unit.title}. if you do not have much imformation related to this unit, just create content that is in {unit.description}"
+
+        # Generate content using LlamaIndex with options
+        logger.info("Initializing LlamaIndex service...")
+        llama_service = LlamaIndexService(course_id=module.course_id)
+        logger.info("LlamaIndex service initialized")
+
+        # Create a prompt based on the options
+        logger.info("Building generation prompt...")
+        prompt = f"Generate comprehensive educational content for the unit: {unit.title} with exact name. just create content that is in {unit.description}"
+        prompt += """Create detailed, informative content that explains the topic clearly .  
+                    try to use as much as possible of the source text and graphics (use url only for graphics) for advanced concepts or thing that are hard to understand. 
+                    do not display long string in one line.
+                    The content must answer the learning objective of the unit."""
+        prompt += "Use markdown formatting for the content of GitHub Flavored Markdown (GFM) . never use html tags and use  $ for mathimatical expressions must be in latex "
+
+        if options:
+            logger.info("Adding custom options to prompt...")
+            if options.custom_prompt:
+                prompt += f"\nCustom instructions: {options.custom_prompt}\n"
+            if options.difficulty_level:
+                prompt += f"Difficulty level: {options.difficulty_level}\n"
+            if options.include_examples:
+                prompt += "Include practical examples.\n"
+            if options.include_exercises:
+                prompt += "Include practice exercises.and solution with step by step explanation separetly\n"
+            if options.tone:
+                prompt += f"Use a {options.tone} tone.\n"
+            if options.target_audience:
+                prompt += f"Target audience: {options.target_audience}\n"
+
+        # Generate content
+        logger.info("Generating content using LlamaIndex...")
+        try:
+            content = await llama_service.generate_content(source_text, prompt)
+            logger.info("Content generated successfully")
+        except Exception as e:
+            logger.error(f"Error generating content: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate content: {str(e)}",
+            )
+
+        # Create content record
+        logger.info("Creating content record in database...")
+        content_metadata = options.dict() if options else {}
+
+        db_content = Content(
+            unit_id=unit_id,
+            title=unit.title,
+            content_type=options.content_type if options else "text",
+            content=content,
+            order=1,
+            is_ai_generated=True,
+            ai_prompt=prompt,
+            page_reference=page_reference,
+            content_metadata=json.dumps(content_metadata),
         )
 
-    # Verify module exists and belongs to the course
-    module = db.get(Module, unit.module_id)
-    if not module:
+        db.add(db_content)
+        db.commit()
+        db.refresh(db_content)
+        logger.info("Content record created successfully")
+
+        return db_content
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in content generation: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Module not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(e)}",
         )
-
-    # Verify course exists and user has access
-    course = db.get(Course, module.course_id)
-    if not course:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Course not found"
-        )
-    # Only course owner can create content
-    if course.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions"
-        )
-
-    # Extract text from PDF if available
-    source_text = ""
-    page_reference = ""
-
-    if course.file_id:
-        file = db.get(File, course.file_id)
-        if file and file.file_path:
-            temp_file_path = None
-            try:
-                # Download file from Supabase to a temporary location
-                with tempfile.NamedTemporaryFile(
-                    delete=False, suffix=".pdf"
-                ) as temp_file:
-                    temp_file_path = temp_file.name
-                    file_content = await download_file_from_supabase(file.file_path)
-                    temp_file.write(file_content)
-
-                # Extract text from PDF using temporary file
-                pdf_toc = PDFTableOfContents(temp_file_path)
-                source_text = pdf_toc.extract_text_from_pages(1, 5)
-            finally:
-                # Clean up temporary file
-                if temp_file_path and os.path.exists(temp_file_path):
-                    try:
-                        os.unlink(temp_file_path)
-                    except PermissionError:
-                        # Log the error but continue execution
-                        logger.warning(
-                            f"Could not delete temporary file: {temp_file_path}"
-                        )
-
-    # If no source text is available, use a default prompt
-    if not source_text:
-        source_text = f"Create educational content for the unit: {unit.title}. if you do not have much imformation related to this unit, just create content that is in {unit.description}"
-
-    # Generate content using LlamaIndex with options
-    llama_service = LlamaIndexService(course_id=module.course_id)
-
-    # Create a prompt based on the options
-    prompt = f"Generate comprehensive educational content for the unit: {unit.title} with exact name. just create content that is in {unit.description}"
-    prompt += """Create detailed, informative content that explains the topic clearly .  
-                try to use as much as possible of the source text and graphics (use url only for graphics) for advanced concepts or thing that are hard to understand. 
-                do not display long string in one line.
-                The content must answer the learning objective of the unit."""
-    prompt += "Use markdown formatting for the content of GitHub Flavored Markdown (GFM) . never use html tags and use  $ for mathimatical expressions must be in latex "
-
-    if options:
-        if options.custom_prompt:
-            prompt += f"\nCustom instructions: {options.custom_prompt}\n"
-        if options.difficulty_level:
-            prompt += f"Difficulty level: {options.difficulty_level}\n"
-        if options.include_examples:
-            prompt += "Include practical examples.\n"
-        if options.include_exercises:
-            prompt += "Include practice exercises.and solution with step by step explanation separetly\n"
-        if options.tone:
-            prompt += f"Use a {options.tone} tone.\n"
-        if options.target_audience:
-            prompt += f"Target audience: {options.target_audience}\n"
-
-    # Generate content
-    content = await llama_service.generate_content(source_text, prompt)
-
-    # Create content record
-    content_metadata = options.dict() if options else {}
-
-    db_content = Content(
-        unit_id=unit_id,
-        title=unit.title,
-        content_type=options.content_type if options else "text",
-        content=content,
-        order=1,
-        is_ai_generated=True,
-        ai_prompt=prompt,
-        page_reference=page_reference,
-        content_metadata=json.dumps(content_metadata),
-    )
-
-    db.add(db_content)
-    db.commit()
-    db.refresh(db_content)
-
-    return db_content
 
 
 @router.post(
