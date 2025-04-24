@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     SUPABASE_URL: str
     SUPABASE_SERVICE_ROLE_KEY: str
     SUPABASE_KEY: str
+    SUPABASE_POSTGRES_CONNECTION_STRING: str
 
     # Chunk Settings
     CHUNK_SIZE: int = 1024
@@ -37,9 +38,9 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # Gemini Model Settings
-    GEMINI_MODEL: str = "gemini-pro"
-    GEMINI_EMBEDDING_MODEL: str = "models/embedding-001"
-    GROQ_MODEL: str = "llama3-70b-8192"
+    GEMINI_MODEL: str = ""
+    GEMINI_EMBEDDING_MODEL: str = ""
+    GROQ_MODEL: str = ""
 
     # BACKEND_CORS_ORIGINS is a comma-separated list of origins
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]

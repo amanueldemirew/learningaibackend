@@ -1,50 +1,21 @@
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
+
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import RedirectResponse
 from app.core.config import settings
 from app.api.v1.router import api_router
 from app.db.session import init_db
-from app.core.logger import logger
+
 from app.core.middleware import TimeoutMiddleware
 
-from llama_index.llms.google_genai import GoogleGenAI as Gemini
-from llama_index.embeddings.google_genai import GoogleGenAIEmbedding as GeminiEmbedding
+from llama_index.llms.gemini import Gemini
+from llama_index.embeddings.gemini import GeminiEmbedding
 from llama_index.core import Settings
+from dotenv import load_dotenv 
 
-import os
-import time
-
-
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1024"))
-CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "20"))
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-pro")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "models/embedding-001")
-
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY environment variable is required")
-
-
-def configure_settings():
-    """Configure LlamaIndex settings"""
-
-    # Reset any existing settings
-    Settings.chunk_size = CHUNK_SIZE
-    Settings.chunk_overlap = CHUNK_OVERLAP
-    Settings.llm = Gemini(model=GEMINI_MODEL, api_key=GEMINI_API_KEY)
-    Settings.embed_model = GeminiEmbedding(model_name=GEMINI_EMBEDDING_MODEL)
-
+load_dotenv()
 
 # Create FastAPI app with increased file size limit
 app = FastAPI(
@@ -129,15 +100,9 @@ async def swagger_ui_redirect():
 
 @app.on_event("startup")
 async def startup_event():
-    
     init_db()
-    
-
-
 
 
 @app.get("/")
 async def root():
     return {"message": "Welcome to FastAPI Backend"}
-
-

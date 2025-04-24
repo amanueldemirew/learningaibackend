@@ -15,8 +15,8 @@ from llama_index.core import (
     StorageContext,
     get_response_synthesizer,
 )
-from llama_index.llms.google_genai import GoogleGenAI
-from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
+from llama_index.llms.gemini import Gemini
+from llama_index.embeddings.gemini import GeminiEmbedding
 from llama_index.readers.file import PyMuPDFReader
 from llama_index.vector_stores.supabase import SupabaseVectorStore
 from llama_index.vector_stores.chroma import ChromaVectorStore
@@ -39,14 +39,14 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Constants from .env with defaults
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 1024))
-CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 20))
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-pro")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "models/embedding-001")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-70b-8192")
-
+CHUNK_SIZE = settings.CHUNK_SIZE
+CHUNK_OVERLAP = settings.CHUNK_OVERLAP
+GEMINI_MODEL = settings.GEMINI_MODEL
+GEMINI_API_KEY = settings.GEMINI_API_KEY
+EMBEDDING_MODEL = settings.GEMINI_EMBEDDING_MODEL
+GROQ_API_KEY = settings.GROQ_API_KEY
+GROQ_MODEL = settings.GROQ_MODEL
+GOOGLE_API_KEY = settings.GOOGLE_API_KEY
 # Get the Supabase connection string from settings
 SUPABASE_URL = settings.SUPABASE_URL
 
@@ -83,7 +83,7 @@ def configure_llama_settings():
 
     # Configure LLM
     if GEMINI_API_KEY:
-        Settings.llm = GoogleGenAI(model=GEMINI_MODEL, api_key=GEMINI_API_KEY)
+        Settings.llm = Gemini()
     elif GROQ_API_KEY:
         Settings.llm = Groq(model=GROQ_MODEL, api_key=GROQ_API_KEY)
     else:
@@ -91,7 +91,7 @@ def configure_llama_settings():
 
     # Configure embedding model
     if GEMINI_API_KEY:
-        Settings.embed_model = GoogleGenAIEmbedding(model_name=EMBEDDING_MODEL)
+        Settings.embed_model = GeminiEmbedding(model_name=EMBEDDING_MODEL)
     else:
         logger.warning("No embedding API key found. Using default embedding model.")
 
@@ -243,4 +243,39 @@ class LlamaIndexService:
             return stats
         except Exception as e:
             logger.error(f"Error getting collection statistics: {str(e)}")
+            raise
+
+    async def generate_content(self, source_text: str, prompt: str) -> str:
+        """
+        Generate content using the LLM
+
+        Args:
+            source_text: Source text to use for generation
+            prompt: Prompt to guide the generation
+
+        Returns:
+            Generated content
+        """
+        try:
+            logger.info("Generating content with LlamaIndex")
+
+            # Configure LlamaIndex settings
+            configure_llama_settings()
+
+            # Create a document from the source text
+            doc = Document(text=source_text)
+
+            # Create an index from the document
+            index = VectorStoreIndex.from_documents([doc])
+
+            # Create a query engine
+            query_engine = index.as_query_engine()
+
+            # Generate content
+            response = query_engine.query(prompt)
+
+            logger.info("Successfully generated content")
+            return str(response)
+        except Exception as e:
+            logger.error(f"Error generating content: {str(e)}")
             raise

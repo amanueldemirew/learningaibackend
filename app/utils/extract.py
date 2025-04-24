@@ -9,8 +9,9 @@ from typing import Dict
 from datetime import datetime
 
 import PyPDF2
-from llama_index.llms.google_genai import GoogleGenAI as Gemini
-from llama_index.embeddings.google_genai import GoogleGenAIEmbedding as GeminiEmbedding
+from llama_index.llms.gemini import Gemini
+from llama_index.embeddings.gemini import GeminiEmbedding
+from app.core.config import settings
 import os
 from llama_index.core import Settings
 from dotenv import load_dotenv
@@ -18,12 +19,12 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# Database URIs
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1024"))
-CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "20"))
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-pro")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "models/embedding-001")
+# Database URIs from settings
+CHUNK_SIZE = settings.CHUNK_SIZE
+CHUNK_OVERLAP = settings.CHUNK_OVERLAP
+GEMINI_MODEL = settings.GEMINI_MODEL
+GEMINI_API_KEY = settings.GEMINI_API_KEY
+GEMINI_EMBEDDING_MODEL = settings.GEMINI_EMBEDDING_MODEL
 
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY environment variable is required")
@@ -37,7 +38,7 @@ def configure_settings():
     # Reset any existing settings
     Settings.chunk_size = CHUNK_SIZE
     Settings.chunk_overlap = CHUNK_OVERLAP
-    Settings.llm = Gemini(model=GEMINI_MODEL, api_key=GEMINI_API_KEY)
+    Settings.llm = Gemini()
     Settings.embed_model = GeminiEmbedding(model_name=GEMINI_EMBEDDING_MODEL)
 
 

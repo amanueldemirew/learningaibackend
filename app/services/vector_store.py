@@ -2,7 +2,7 @@ import os
 import logging
 from typing import List, Optional, Dict, Any
 from llama_index.core import Document, VectorStoreIndex, SimpleDirectoryReader
-from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
+from llama_index.embeddings.gemini import GeminiEmbedding
 from llama_index.vector_stores.supabase import SupabaseVectorStore
 from supabase import create_client
 from app.core.config import settings
@@ -16,7 +16,7 @@ supabase_key = settings.SUPABASE_SERVICE_ROLE_KEY
 client = create_client(supabase_url, supabase_key)
 
 # Embedding model
-embed_model = GoogleGenAIEmbedding(model_name=settings.GEMINI_EMBEDDING_MODEL)
+embed_model = GeminiEmbedding(model_name=settings.GEMINI_EMBEDDING_MODEL)
 
 
 class VectorStoreService:
@@ -43,19 +43,19 @@ class VectorStoreService:
 
             # Create vector store with Supabase
             self.vector_store = SupabaseVectorStore(
+                postgres_connection_string=settings.SUPABASE_POSTGRES_CONNECTION_STRING,
+                collection_name=self.collection_name,
                 client=client,
                 table_name=self.collection_name,
                 content_column="content",
                 embedding_column="embedding",
                 metadata_column="metadata",
+                embedding_dim=768,
             )
 
-            # Load documents from directory
-            documents = SimpleDirectoryReader("").load_data()
-
-            # Create index
+            # Create index with empty documents initially
             self.index = VectorStoreIndex.from_documents(
-                documents,
+                [],
                 vector_store=self.vector_store,
                 embed_model=embed_model,
             )

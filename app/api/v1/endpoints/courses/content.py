@@ -198,7 +198,7 @@ async def generate_content(
 
         # Generate content using LlamaIndex with options
         logger.info("Initializing LlamaIndex service...")
-        llama_service = LlamaIndexService(course_id=module.course_id)
+        llama_service = LlamaIndexService(collection_name=f"course_{module.course_id}")
         logger.info("LlamaIndex service initialized")
 
         # Create a prompt based on the options
@@ -794,7 +794,7 @@ async def regenerate_content(
 
         # Generate content
         generated_content = await LlamaIndexService(
-            course_id=course.id
+            collection_name=f"course_{course.id}"
         ).generate_content(source_text, prompt)
 
         # Update content metadata
