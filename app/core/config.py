@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = ""  # Service role key with higher privileges
     SUPABASE_CONNECTION_STRING: str = ""  # Connection string for Supabase PostgreSQL
+    SUPABASE_POOLED_URL: str = ""  # Pooled connection URL for regular operations
+    DIRECT_URL: Optional[str] = (
+        None  # Direct connection URL for vector operations and migrations
+    )
 
     # Chunk Settings
     CHUNK_SIZE: int = 1024
