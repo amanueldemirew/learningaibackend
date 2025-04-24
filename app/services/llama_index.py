@@ -48,7 +48,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-70b-8192")
 
 # Get the Supabase connection string from settings
-SUPABASE_CONNECTION_STRING = settings.SUPABASE_URL
+SUPABASE_URL = settings.SUPABASE_URL
 
 logger.info("Initializing LlamaIndex service with configuration:")
 logger.info(f"CHUNK_SIZE: {CHUNK_SIZE}")
@@ -56,9 +56,7 @@ logger.info(f"CHUNK_OVERLAP: {CHUNK_OVERLAP}")
 logger.info(f"GEMINI_MODEL: {GEMINI_MODEL}")
 logger.info(f"EMBEDDING_MODEL: {EMBEDDING_MODEL}")
 logger.info(f"GROQ_MODEL: {GROQ_MODEL}")
-logger.info(
-    f"Supabase connection string configured: {'Yes' if SUPABASE_CONNECTION_STRING else 'No'}"
-)
+logger.info(f"Supabase URL configured: {'Yes' if SUPABASE_URL else 'No'}")
 
 if not GROQ_API_KEY:
     logger.error("GROQ_API_KEY is not configured in environment variables")

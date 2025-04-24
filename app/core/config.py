@@ -25,11 +25,8 @@ class Settings(BaseSettings):
     # Database URLs
     DATABASE_URL: str
     SUPABASE_URL: str
-    SUPABASE_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: str
-    SUPABASE_POOLED_URL: str
-    DIRECT_URL: str
-    SUPABASE_CONNECTION_STRING: str
+    SUPABASE_KEY: str
 
     # Chunk Settings
     CHUNK_SIZE: int = 1024

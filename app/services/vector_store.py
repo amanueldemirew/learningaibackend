@@ -180,15 +180,11 @@ class VectorStoreService:
         try:
             logger.info("Getting collection statistics")
 
-            # Query the Supabase table directly to get stats
-            response = client.table(self.collection_name).select("*").execute()
-
-            # Calculate basic stats
-            total_documents = len(response.data)
-
+            # Return basic collection information
             stats = {
-                "total_documents": total_documents,
                 "collection_name": self.collection_name,
+                "vector_store_type": "supabase",
+                "embedding_model": settings.GEMINI_EMBEDDING_MODEL,
             }
 
             logger.info("Successfully retrieved collection statistics")

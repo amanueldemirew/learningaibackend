@@ -10,8 +10,10 @@ import urllib.parse
 # Set up logging
 logger = logging.getLogger(__name__)
 
-# Initialize Supabase client with anonymous key for general operations
-supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+# Initialize Supabase client with service role key for general operations
+supabase: Client = create_client(
+    settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY
+)
 
 # Initialize Supabase admin client with service role key for storage operations
 # This bypasses RLS policies

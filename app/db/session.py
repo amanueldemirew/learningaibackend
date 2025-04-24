@@ -27,8 +27,8 @@ def create_db_engine(max_retries=5, retry_delay=5, use_vector_store=False):
     """
     # Determine which connection URL to use
     if use_vector_store:
-        # For vector operations, use Supabase direct connection
-        connection_url = settings.SUPABASE_CONNECTION_STRING
+        # For vector operations, use the same database URL
+        connection_url = settings.DATABASE_URL
         connection_type = "supabase vector store"
     else:
         # For regular operations, use NeonDB
