@@ -27,8 +27,8 @@ def create_db_engine(max_retries=5, retry_delay=5, use_vector_store=False):
     """
     # Determine which connection URL to use
     if use_vector_store:
-        # For vector operations, use the same database URL
-        connection_url = settings.DATABASE_URL
+        # For vector operations, use Supabase
+        connection_url = settings.SUPABASE_POSTGRES_CONNECTION_STRING
         connection_type = "supabase vector store"
     else:
         # For regular operations, use NeonDB
@@ -48,11 +48,21 @@ def create_db_engine(max_retries=5, retry_delay=5, use_vector_store=False):
         try:
             logger.info(f"Database connection attempt {attempt + 1}/{max_retries}")
 
+            # Add SSL mode for Supabase connections
+            if use_vector_store and "sslmode=require" not in connection_url:
+                connection_url += (
+                    "?sslmode=require"
+                    if "?" not in connection_url
+                    else "&sslmode=require"
+                )
+                logger.info("Added SSL mode to Supabase connection URL")
+
             engine = create_engine(
                 connection_url,
                 echo=True,
                 pool_pre_ping=True,  # Enable connection health checks
                 pool_recycle=300,  # Recycle connections every 5 minutes
+                connect_args={"connect_timeout": 30},  # Increase connection timeout
             )
             # Test the connection
             logger.info("Testing database connection...")
