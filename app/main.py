@@ -129,35 +129,10 @@ async def swagger_ui_redirect():
 
 @app.on_event("startup")
 async def startup_event():
-    """Log application startup"""
-    logger.structured_info(
-        "Application startup",
-        debug_mode=settings.DEBUG,
-        reload_enabled=settings.RELOAD,
-        log_level=settings.LOG_LEVEL,
-    )
-
-    # Try to initialize the database, but don't fail if it doesn't work
-    try:
-        init_db()
-        logger.info("Database initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize database: {str(e)}")
-        logger.warning("Application will continue without database initialization")
-        # In production, we'll continue even if database initialization fails
-        if os.getenv("ENVIRONMENT", "production").lower() != "development":
-            logger.warning(
-                "Continuing application startup despite database initialization failure"
-            )
-        else:
-            # In development, we might want to fail fast
-            raise
+    init_db()
+    
 
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Log application shutdown"""
-    logger.structured_info("Application shutdown")
 
 
 @app.get("/")
@@ -165,24 +140,3 @@ async def root():
     return {"message": "Welcome to FastAPI Backend"}
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint to monitor application and database status"""
-    from sqlalchemy import text
-    from app.db.session import engine
-
-    db_status = "unknown"
-    try:
-        # Try to connect to the database
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-            db_status = "connected"
-    except Exception as e:
-        db_status = f"disconnected: {str(e)}"
-
-    return {
-        "status": "ok",
-        "database": db_status,
-        "environment": os.getenv("ENVIRONMENT", "production"),
-        "version": "1.0.0",
-    }

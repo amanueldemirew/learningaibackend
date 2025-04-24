@@ -115,6 +115,9 @@ async def generate_course_toc(
                         )
                         db.add(unit)
 
+                # Commit to ensure all units get proper IDs
+                db.commit()
+
                 # Create or update TOC record
                 toc_record = (
                     db.query(TableOfContents)
@@ -140,6 +143,13 @@ async def generate_course_toc(
                 # Create a mapping of module titles to module IDs
                 module_id_map = {module.title: module.id for module in modules}
 
+                # Get all units for these modules
+                module_ids = [module.id for module in modules]
+                units = db.query(Unit).filter(Unit.module_id.in_(module_ids)).all()
+
+                # Create a mapping of (module_id, unit_title) to unit_id
+                unit_id_map = {(unit.module_id, unit.title): unit.id for unit in units}
+
                 # Create the response
                 response = TOCResponse(
                     course_id=course_id,
@@ -152,7 +162,13 @@ async def generate_course_toc(
                             order=module_data.get("order", 0),
                             units=[
                                 TOCUnit(
-                                    id=0,  # We don't have unit IDs in the response yet
+                                    id=unit_id_map.get(
+                                        (
+                                            module_id_map[module_data["title"]],
+                                            unit["title"],
+                                        ),
+                                        0,
+                                    ),
                                     title=unit["title"],
                                     description=unit.get("description", ""),
                                     order=unit.get("order", 0),

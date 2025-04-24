@@ -55,7 +55,7 @@ class Settings(BaseSettings):
         raise ValueError(v)
 
     # Database
-    DATABASE_URL: str = "sqlite:///./sql_app.db"
+    DATABASE_URL: str = "postgresql://neondb_owner:npg_0PSndjy7WsCz@ep-misty-bar-a467aet9-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require"
 
     class Config:
         case_sensitive = True
