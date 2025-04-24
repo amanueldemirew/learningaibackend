@@ -56,6 +56,7 @@ engine = create_db_engine()
 def init_db():
     try:
         SQLModel.metadata.create_all(engine)
+        create_vector_extension()
         create_default_user()
     except Exception as e:
         logger.error(f"Error initializing database: {str(e)}")
@@ -63,6 +64,25 @@ def init_db():
             # In production, we'll continue even if initialization fails
             logger.warning(
                 "Continuing application startup despite database initialization failure"
+            )
+        else:
+            raise
+
+
+def create_vector_extension():
+    """Create the vector extension if it doesn't exist"""
+    try:
+        logger.info("Attempting to create vector extension...")
+        with Session(engine) as session:
+            session.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+            session.commit()
+            logger.info("Vector extension created or already exists")
+    except Exception as e:
+        logger.error(f"Error creating vector extension: {str(e)}")
+        if not IS_DEVELOPMENT:
+            # In production, we'll continue even if extension creation fails
+            logger.warning(
+                "Continuing application startup despite vector extension creation failure"
             )
         else:
             raise

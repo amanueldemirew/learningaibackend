@@ -129,6 +129,7 @@ async def swagger_ui_redirect():
 
 @app.on_event("startup")
 async def startup_event():
+    
     init_db()
     
 
