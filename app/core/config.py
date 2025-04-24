@@ -43,23 +43,22 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = ""
 
     # BACKEND_CORS_ORIGINS is a comma-separated list of origins
-    BACKEND_CORS_ORIGINS: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:3000",
-        "https://learningaibackend.onrender.com",
-        "db.tlubcosubwqzpubyykvd.supabase.co",
-    ]
+    BACKEND_CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
 
-    @validator("BACKEND_CORS_ORIGINS", pre=True)
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, (list, str)):
-            return v
-        raise ValueError(v)
+    @property
+    def cors_origins(self) -> List[str]:
+        """Get the CORS origins as a list."""
+        if isinstance(self.BACKEND_CORS_ORIGINS, str):
+            return [
+                origin.strip()
+                for origin in self.BACKEND_CORS_ORIGINS.split(",")
+                if origin.strip()
+            ]
+        return self.BACKEND_CORS_ORIGINS
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=False
+    )
 
 
 settings = Settings()
