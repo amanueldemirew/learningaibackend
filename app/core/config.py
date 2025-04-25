@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = ""
 
     # BACKEND_CORS_ORIGINS is a comma-separated list of origins
-    BACKEND_CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000, "https://learningai-eight.vercel.app/", "https://learningai-eight.vercel.app"
+    BACKEND_CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000,https://learningai-eight.vercel.app,https://learningaibackend.onrender.com"
 
     @property
     def cors_origins(self) -> List[str]:
