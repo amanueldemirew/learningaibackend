@@ -5,6 +5,7 @@
     "fitz",
     "genai",
     "generativeai",
+    "GROQ",
     "hnsw",
     "levelname",
     "llms",
@@ -16,6 +17,7 @@
     "redoc",
     "sparql",
     "sqlmodel",
+    "SUPABASE",
     "uvicorn"
   ]
 }

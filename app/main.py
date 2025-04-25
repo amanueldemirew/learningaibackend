@@ -20,7 +20,7 @@ load_dotenv()
 # Create FastAPI app with increased file size limit
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    openapi_url=["*"],
+    openapi_url="/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc",
     # Increase the maximum file size limit to 100MB
