@@ -20,7 +20,7 @@ load_dotenv()
 # Create FastAPI app with increased file size limit
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    openapi_url=["*"],
     docs_url="/docs",
     redoc_url="/redoc",
     # Increase the maximum file size limit to 100MB
@@ -31,7 +31,7 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
