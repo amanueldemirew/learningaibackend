@@ -321,12 +321,33 @@ class PDFTableOfContents:
                 if re.search(r"table\s+of\s+contents|contents", text, re.I):
                     if toc_start is None:
                         toc_start = page_num + 1
-                        # Set TOC end to be 2 pages after the start, but don't exceed total pages
-                        toc_end = min(toc_start + 2, total_pages)
-                        self.logger.info(
-                            f"TOC found on page {page_num + 1}, extending range to page {toc_end}."
-                        )
-                        break
+                        # Initially set toc_end to the same page but we'll look for a better end
+                        toc_end = page_num + 1
+                        self.logger.info(f"TOC found on page {page_num + 1}.")
+
+                        # Look ahead a few pages to find where TOC likely ends
+                        # Check up to 5 pages ahead or until the end of the document
+                        potential_end = min(page_num + 5, total_pages - 1)
+
+                        # Simple heuristic: TOC pages typically have multiple lines ending with numbers
+                        # and later pages don't have this pattern as frequently
+                        for next_page_num in range(page_num + 1, potential_end + 1):
+                            next_page = doc.load_page(next_page_num)
+                            next_text = next_page.get_text()
+
+                            # Count lines that end with page numbers (common in TOC)
+                            lines = next_text.split("\n")
+                            lines_with_numbers = sum(
+                                1 for line in lines if re.search(r"\d+\s*$", line)
+                            )
+
+                            # If we have a significant number of numbered lines, it's likely still TOC
+                            if lines_with_numbers > 3:
+                                toc_end = next_page_num + 1
+                                self.logger.info(f"TOC continues to page {toc_end}")
+                            else:
+                                # Found a page that doesn't look like TOC
+                                break
 
             if toc_start and toc_end:
                 self.logger.info(f"TOC spans pages {toc_start} to {toc_end}.")
