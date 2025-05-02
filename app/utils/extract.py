@@ -190,9 +190,10 @@ class PDFTableOfContents:
         if hasattr(self, "doc"):
             self.doc.close()
 
-    def find_toc_page_range(self, pdf_path, max_toc_pages=10):
+    def find_toc_page_range(self, pdf_path, max_toc_pages=10, min_toc_span=3):
         """
         Finds the range of pages that the Table of Contents (TOC) spans in a PDF.
+        Ensures that the TOC spans at least min_toc_span pages from the start.
         """
         try:
             self.logger.info(f"Finding TOC page range for PDF: {pdf_path}")
@@ -209,7 +210,9 @@ class PDFTableOfContents:
             if toc:
                 self.logger.info(f"Found bookmarks: {len(toc)} entries")
                 toc_start = toc[0][2] + 1
-                toc_end = toc[-1][2] + 1
+                toc_end = max(toc[-1][2] + 1, toc_start + min_toc_span - 1)
+                # Ensure toc_end doesn't exceed total pages
+                toc_end = min(toc_end, total_pages)
                 self.logger.info(
                     f"Found TOC in bookmarks, spans pages {toc_start} to {toc_end}."
                 )
@@ -237,18 +240,23 @@ class PDFTableOfContents:
                     self.logger.info(f"TOC found on page {page_num + 1}.")
 
             if toc_start and toc_end:
+                # Ensure the TOC spans at least min_toc_span pages
+                toc_end = max(toc_end, toc_start + min_toc_span - 1)
+                # Ensure toc_end doesn't exceed total pages
+                toc_end = min(toc_end, total_pages)
                 self.logger.info(f"TOC spans pages {toc_start} to {toc_end}.")
                 return toc_start, toc_end
             else:
-                self.logger.warning("No TOC found in first {max_toc_pages} pages.")
+                self.logger.warning(f"No TOC found in first {max_toc_pages} pages.")
                 # If no TOC found, assume it's on the first page
                 self.logger.info("Assuming TOC is on the first page.")
-                return 1, 1
+                # Return a range that spans at least min_toc_span pages
+                return 1, min(min_toc_span, total_pages)
         except Exception as e:
             self.logger.error(f"Error processing PDF: {str(e)}", exc_info=True)
             # If there's an error, assume TOC is on the first page
             self.logger.info("Error occurred, assuming TOC is on the first page.")
-            return 1, 1
+            return 1, min(min_toc_span, total_pages)
 
     def ocr_page(self, pdf_path, page_num):
         """Converts a PDF page to image and performs OCR."""
