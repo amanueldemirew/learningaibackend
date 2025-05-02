@@ -334,8 +334,8 @@ class PDFTableOfContents:
             "description": "It is found in page X - Y",
             "order": 1,
             "units": [
-                {{"title": "Unit 1", "description": "It is found in page X - Y", "order": 1}},
-                {{"title": "Unit 2", "description": "It is found in page X - Y", "order": 2}},
+                {{"title": "subtopic title", "description": "It is found in page X - Y", "order": 1}},
+                {{"title": "subtopic title", "description": "It is found in page X - Y", "order": 2}},
                 ...
             ]
             }},
